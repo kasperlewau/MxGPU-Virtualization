@@ -32,22 +32,9 @@ if [ $UID -ne 0 ]; then
 else
 	Path=$(readlink /lib/modules/$(uname -r)/build)
 	echo "check: $Path"
-
-	#A work around for relative Path link for CentOS kernel 4.9
-	if [ $Path == "../../../usr/src/kernels/4.9.13-22.el7.x86_64" ]; then
-		cd /lib/modules/$(uname -r)/
-		rm  ./build
-		ln -s /usr/src/kernels/4.9.13-22.el7.x86_64 build
-		ls -l
-	fi
-
-	#su $(ORIGIN_USER)
-
 	cd $SRC_ROOT/drv
-
 	make
 	make install
-
 fi
 
 exit
