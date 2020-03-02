@@ -70,8 +70,6 @@ int kcl_pci_find_capability(kcl_pci_dev_handle dev,
 /* SR-IOV capabiltiy */
 #define PCI_EXT_CAP_ID__SRIOV               0x10
 #define PCI_SRIOV_CTRL                      0x08/* SR-IOV Control */
-#define  PCI_SRIOV_CTRL_VFE                 0x01/* VF Enable */
-#define  PCI_SRIOV_CTRL_MSE                 0x08/* VF Memory Space Enable */
 
 #define PCI_CAP_ID_EXP         0x10    /* PCI Express */
 
