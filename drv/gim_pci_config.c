@@ -21,7 +21,6 @@
  */
 
 #include <linux/pci.h>
-#include <linux/pci-aspm.h>
 #include <linux/delay.h>
 
 #include "gim_pci_config.h"
@@ -504,7 +503,7 @@ void pci_config_save(struct pci_dev *dev, uint8_t *buf, int count)
 
 	for (i = 0; i < count; i += 4) {
 		pci_read_config_dword(dev, i, pcfg);
-		
+
 		/* When we restore pci config space,
 		*  we don't want to restore VF_ENABLE bit in SR-IOV structure.
 		*/
@@ -522,7 +521,7 @@ void pci_config_save(struct pci_dev *dev, uint8_t *buf, int count)
 
 /*
  * restore_regrestore_reg() - Restore a single entry (index) from the restore_tbl[]
- * @dev: pointer to the pci device 
+ * @dev: pointer to the pci device
  * @data: pointer to the raw data in the form of an image of
  * @restore_table: the pcie config space restore_table -
  *		   a table of entries describing the data
@@ -666,7 +665,7 @@ void pci_config_restore(struct pci_dev *dev, uint8_t *buf, int count)
 
 	} else {
 		gim_info("Restore VF config space");
-		
+
 		/* Don't try to restore SRIOV or GPUIOV spaces */
 		count = 330;
 		for (i = 0x0; i < count; i += 4) {
