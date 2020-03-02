@@ -1,0 +1,318 @@
+From 2d4abede2a786beee0bd944ddc8eb677ce8632f6 Mon Sep 17 00:00:00 2001
+From: Dominik Csapak <d.csapak@proxmox.com>
+Date: Tue, 25 Jun 2019 09:54:52 +0200
+Subject: [PATCH] make gim compatible with kernel >= 5.0
+
+kernel 5.0 removed some deprecated timespec/timeval functions
+so conditionally convert everything to timespec64
+
+Signed-off-by: Dominik Csapak <d.csapak@proxmox.com>
+---
+ drv/gim_adapter.c       | 38 +++++++++++++++++++++++---------------
+ drv/gim_adapter.h       | 36 +++++++++++++++++++++++++++---------
+ drv/gim_dma.c           |  8 ++++----
+ drv/gim_irqmgr.c        |  8 ++++----
+ drv/gim_monitor.c       |  2 +-
+ drv/gim_monitor_ioctl.c |  2 +-
+ drv/gim_monitor_ioctl.h |  2 +-
+ 7 files changed, 61 insertions(+), 35 deletions(-)
+
+diff --git a/drv/gim_adapter.c b/drv/gim_adapter.c
+index 45b5207..822da96 100644
+--- a/drv/gim_adapter.c
++++ b/drv/gim_adapter.c
+@@ -1630,8 +1630,8 @@ static const unsigned int gpu_hang_check_list[GPU_STATUS_SIZE] = {
+ 
+ static int wait_cmd_complete(struct function *func)
+ {
+-	struct timespec start_time;
+-	struct timespec delta_time;
++	struct TIMESPECTYPE start_time;
++	struct TIMESPECTYPE delta_time;
+ 
+ 	uint32_t time_out = 2; /* 2 seconds */
+ 	kcl_type_u8 command;
+@@ -1640,7 +1640,7 @@ static int wait_cmd_complete(struct function *func)
+ 	uint32_t status;
+ 	struct adapter *adapt = func->adapt;
+ 
+-	getnstimeofday(&start_time);
++	GETNSTIMEOFDAY(&start_time);
+ 
+ 	pci_read_config_dword(adapt->pf.pci_dev, 4, &status);
+ 	gim_dbg("Cmd/Status @ 4 = 0x%08x\n", status);
+@@ -1677,7 +1677,11 @@ static int wait_cmd_complete(struct function *func)
+ 		}
+ 	}
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+ 	gim_err(" wait_cmd_complete -- time out after %ld.%09ld sec\n",
++#else
++	gim_err(" wait_cmd_complete -- time out after %lld.%09ld sec\n",
++#endif
+ 		delta_time.tv_sec, delta_time.tv_nsec);
+ 	pci_read_config_byte(adapt->pf.pci_dev,
+ 			adapt->gpuiov.pos + PCI_GPUIOV_CMD_CONTROL,
+@@ -1748,7 +1752,7 @@ int run_vf(struct function *func)
+ 	ret = wait_cmd_complete(func);
+ 
+ 	/* record time of start to run vf */
+-	getnstimeofday(&(func->time_log.active_last_tick));
++	GETNSTIMEOFDAY(&(func->time_log.active_last_tick));
+ 
+ 	if (is_pf) {
+ 		uint32_t tlb_control = pf_read_register(adapt,
+@@ -1770,7 +1774,7 @@ int idle_vf(struct function *func)
+ {
+ 	int  is_pf;
+ 	uint32_t status;
+-	struct timespec tmp;
++	struct TIMESPECTYPE tmp;
+ 	struct adapter *adapt;
+ 
+ 	adapt = func->adapt;
+@@ -1795,10 +1799,10 @@ int idle_vf(struct function *func)
+ 
+ 	/* record current vf active time*/
+ 	if (func->time_log.active_last_tick.tv_sec != 0) {
+-		getnstimeofday(&tmp);
+-		tmp = timespec_sub(tmp, func->time_log.active_last_tick);
++		GETNSTIMEOFDAY(&tmp);
++		tmp = TIMESPEC_SUB(tmp, func->time_log.active_last_tick);
+ 		func->time_log.active_time =
+-			timespec_add(func->time_log.active_time, tmp);
++			TIMESPEC_ADD(func->time_log.active_time, tmp);
+ 
+ 		/* clear last tick record, in case of twice idle */
+ 		func->time_log.active_last_tick.tv_sec = 0;
+@@ -3977,12 +3981,12 @@ void dump_scratch_ram(struct adapter *adapt,
+ 	}
+ }
+ 
+-struct timespec time_elapsed(struct timespec *ts_start)
++struct TIMESPECTYPE time_elapsed(struct TIMESPECTYPE *ts_start)
+ {
+-	struct timespec ts_end;
+-	struct timespec ts_diff;
++	struct TIMESPECTYPE ts_end;
++	struct TIMESPECTYPE ts_diff;
+ 
+-	getnstimeofday(&ts_end);
++	GETNSTIMEOFDAY(&ts_end);
+ 	ts_diff.tv_sec = ts_end.tv_sec - ts_start->tv_sec;
+ 	if (ts_start->tv_nsec > ts_end.tv_nsec) {
+ 		--ts_diff.tv_sec;
+@@ -3998,8 +4002,8 @@ struct timespec time_elapsed(struct timespec *ts_start)
+ /* If lock available return 1, if can't lock return 0 */
+ int amd_try_spinlock(spinlock_t *lock, uint32_t usec_timeout)
+ {
+-	struct timespec start_time;
+-	struct timespec elapsed_time;
++	struct TIMESPECTYPE start_time;
++	struct TIMESPECTYPE elapsed_time;
+ 
+ 	/* check the lock */
+ 	if (spin_trylock(lock))
+@@ -4008,7 +4012,7 @@ int amd_try_spinlock(spinlock_t *lock, uint32_t usec_timeout)
+ 	/* Lock is busy */
+ 	gim_warn("Lock is busy\n");
+ 	/* Get the current time */
+-	getnstimeofday(&start_time);
++	GETNSTIMEOFDAY(&start_time);
+ 	/* loop checking lock and time until timeout */
+ 	elapsed_time.tv_sec = 0;
+ 	elapsed_time.tv_nsec = 0;
+@@ -4017,7 +4021,11 @@ int amd_try_spinlock(spinlock_t *lock, uint32_t usec_timeout)
+ 		if (elapsed_time.tv_nsec > (usec_timeout * 1000))
+ 			return 0;
+ 	}
++#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+ 	gim_info("Lock was busy but freed after %ld.%9ld sec\n",
++#else
++	gim_info("Lock was busy but freed after %lld.%9ld sec\n",
++#endif
+ 			elapsed_time.tv_sec, elapsed_time.tv_nsec);
+ 	return 1;
+ }
+diff --git a/drv/gim_adapter.h b/drv/gim_adapter.h
+index 2da05ee..570e03c 100644
+--- a/drv/gim_adapter.h
++++ b/drv/gim_adapter.h
+@@ -28,6 +28,7 @@
+ #include <linux/timer.h>
+ #include <linux/hrtimer.h>
+ #include <linux/workqueue.h>
++#include <linux/version.h>
+ #include "gim_fb.h"
+ #include "gim_pci.h"
+ #include "gim_flr.h"
+@@ -99,16 +100,33 @@ union physical_address {
+ 
+ 
+ #define MAX_MSG_LEN  64
++
++/* Kernel >= 5.0 removed some old timespec methods */
++#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
++#define TIMESPECTYPE timespec
++#define TIMEVALTYPE  timeval
++#define TIMESPEC_ADD(x,y)   timespec_add((x),(y))
++#define TIMESPEC_SUB(x,y)   timespec_sub((x),(y))
++#define GETNSTIMEOFDAY(x)   getnstimeofday(x)
++#else
++#define TIMESPECTYPE timespec64
++#define TIMEVALTYPE  timespec64
++#define TIMESPEC_ADD(x,y)   timespec64_add((x),(y))
++#define TIMESPEC_SUB(x,y)   timespec64_sub((x),(y))
++#define GETNSTIMEOFDAY(x)   ktime_get_real_ts64(x)
++#define do_gettimeofday(x)  ktime_get_real_ts64(x)
++#endif
++
+ struct op_time_log {
+-	struct timeval init_start;
+-	struct timeval init_end;
+-	struct timeval finish_start;
+-	struct timeval finish_end;
++	struct TIMEVALTYPE init_start;
++	struct TIMEVALTYPE init_end;
++	struct TIMEVALTYPE finish_start;
++	struct TIMEVALTYPE finish_end;
+ 	int reset_count;
+-	struct timeval reset_time;
++	struct TIMEVALTYPE reset_time;
+ 	/* we need accurate time here*/
+-	struct timespec active_last_tick;
+-	struct timespec active_time;
++	struct TIMESPECTYPE active_last_tick;
++	struct TIMESPECTYPE active_time;
+ };
+ 
+ enum amdgim_option_mode {
+@@ -413,7 +431,7 @@ struct adapter {
+ 	struct work_task irq_tasks[MAX_VIRTUAL_FUNCTIONS];
+ 	int vf_req_gpu_access;
+ 	/* the time when a VF enters full access mode*/
+-	struct timespec start_time;
++	struct TIMESPECTYPE start_time;
+ 	/* timeout check timer*/
+ 	struct hrtimer timeout_timer;
+ 	/* record the last VF id that owns gpu*/
+@@ -534,7 +552,7 @@ int gim_sched_reset_vf(struct adapter *adapt,
+ 			int command_status);
+ 
+ int gim_sched_reset_gpu(struct adapter *adapt);
+-struct timespec time_elapsed(struct timespec *ts_start);
++struct TIMESPECTYPE time_elapsed(struct TIMESPECTYPE *ts_start);
+ void pause_scheduler(struct adapter *adapt);
+ void resume_scheduler(struct adapter *adapt);
+ int get_scheduler_time_interval(struct adapter *adapt, struct function *func);
+diff --git a/drv/gim_dma.c b/drv/gim_dma.c
+index 75bb72e..421df0c 100644
+--- a/drv/gim_dma.c
++++ b/drv/gim_dma.c
+@@ -48,11 +48,11 @@ void *map_vf_fb(struct pci_dev *pdev);
+  */
+ static int wait_dma_ready(struct adapter *adapt)
+ {
+-	struct timespec start_time;
++	struct TIMESPECTYPE start_time;
+ 	unsigned long dma_cntl = 0;
+ 	int rc = 0;
+ 
+-	getnstimeofday(&start_time);
++	GETNSTIMEOFDAY(&start_time);
+ 	do {
+ 		dma_cntl = pf_read_register(adapt, mmCP_DMA_CNTL);
+ 		/* DMA has 2 PIO commands in the FIFO
+@@ -76,11 +76,11 @@ static int wait_dma_ready(struct adapter *adapt)
+  */
+ static int wait_dma_complete(struct adapter *adapt)
+ {
+-	struct timespec start_time;
++	struct TIMESPECTYPE start_time;
+ 	unsigned int cp_stat = 0;
+ 	int rc = 0;
+ 
+-	getnstimeofday(&start_time);
++	GETNSTIMEOFDAY(&start_time);
+ 	do {
+ 		cp_stat = pf_read_register(adapt, mmCP_STAT);
+ 	} while ((cp_stat & 0x80400000)/* CP_BUSY or DMA_BUSY */
+diff --git a/drv/gim_irqmgr.c b/drv/gim_irqmgr.c
+index 035d26c..e799f74 100644
+--- a/drv/gim_irqmgr.c
++++ b/drv/gim_irqmgr.c
+@@ -1488,7 +1488,7 @@ int handle_fullaccess_timeout(struct adapter *adapt)
+ 	struct function *func = NULL;
+ 	struct function *next_func = NULL;
+ 	struct function_list_node *node;
+-	struct timespec time_diff;
++	struct TIMESPECTYPE time_diff;
+ 	unsigned long time_us;
+ 	int func_id = 0;
+ 
+@@ -1664,7 +1664,7 @@ void signal_scheduler(void *pcontext)
+ 				/* set the timestamp for full access
+ 				 * timeout check
+ 				 */
+-				getnstimeofday(&adapt->start_time);
++				GETNSTIMEOFDAY(&adapt->start_time);
+ 				/* send SIG_VF_EXCLUSIVE_MMIO to QEMU */
+ 				handle_req_gpu_init_access(adapt,
+ 				req_gpu_task->func_id, NO_RESET);
+@@ -1685,7 +1685,7 @@ void signal_scheduler(void *pcontext)
+ 				/* set the timestamp for full access timeout
+ 				 * check
+ 				 */
+-				getnstimeofday(&adapt->start_time);
++				GETNSTIMEOFDAY(&adapt->start_time);
+ 				handle_req_gpu_init_access(adapt,
+ 				req_gpu_task->func_id, RESET_REQUEST);
+ 
+@@ -1717,7 +1717,7 @@ void signal_scheduler(void *pcontext)
+ 				/* set the timestamp for full access timeout
+ 				 * check
+ 				 */
+-				getnstimeofday(&adapt->start_time);
++				GETNSTIMEOFDAY(&adapt->start_time);
+ 				/* send SIG_VF_EXCLUSIVE_MMIO to QEMU */
+ 				handle_req_gpu_fini_access(adapt,
+ 						req_gpu_task->func_id);
+diff --git a/drv/gim_monitor.c b/drv/gim_monitor.c
+index 0107277..72e0267 100644
+--- a/drv/gim_monitor.c
++++ b/drv/gim_monitor.c
+@@ -950,7 +950,7 @@ static int amdgim_op_gpuvf_vf(char *param, void *obj, void *result)
+ 	unsigned int temp;
+ 	unsigned int vf_candidate;
+ 
+-	struct timeval cur_time;
++	struct TIMEVALTYPE cur_time;
+ 	struct function *p_func;
+ 	struct partition *part;
+ 	struct adapter *p_adapter;
+diff --git a/drv/gim_monitor_ioctl.c b/drv/gim_monitor_ioctl.c
+index cd24c7d..8fba6de 100644
+--- a/drv/gim_monitor_ioctl.c
++++ b/drv/gim_monitor_ioctl.c
+@@ -54,7 +54,7 @@ char *amdgim_commands[AMDGIM_COMMAND_LEN] = {
+ 
+ void amdgim_mutex_get_lock(struct amdgim_mutex_lock *mutexlock)
+ {
+-	struct timeval curr_t;
++	struct TIMEVALTYPE curr_t;
+ 
+ 	do {
+ 		spin_lock(&mutexlock->atom_lock);
+diff --git a/drv/gim_monitor_ioctl.h b/drv/gim_monitor_ioctl.h
+index 33c9368..65e64ae 100644
+--- a/drv/gim_monitor_ioctl.h
++++ b/drv/gim_monitor_ioctl.h
+@@ -35,7 +35,7 @@
+ struct amdgim_mutex_lock {
+ 	bool locked;
+ 	struct mutex lock_mutex;
+-	struct timeval timeout_start;
++	struct TIMEVALTYPE timeout_start;
+ 	spinlock_t atom_lock;
+ };
+ 
