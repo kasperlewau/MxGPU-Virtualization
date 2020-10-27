@@ -348,7 +348,7 @@ void *map_doorbell(struct pci_dev *pdev)
 		return NULL;
 	}
 
-	p_doorbell_base = ioremap_nocache(pci_resource_start(pdev, i),
+	p_doorbell_base = ioremap_cache(pci_resource_start(pdev, i),
 					pci_resource_len(pdev, i));
 
 	if (p_doorbell_base == NULL)
@@ -379,7 +379,7 @@ void *map_vf_fb(struct pci_dev *pdev)
 	gim_info("Map region 0x%llx for length %lld\n",
 		pci_resource_start(pdev, i),
 		pci_resource_len(pdev, i));
-	p_fb_base = ioremap_nocache(pci_resource_start(pdev, i),
+	p_fb_base = ioremap_cache(pci_resource_start(pdev, i),
 				pci_resource_len(pdev, i));
 
 	if (p_fb_base == NULL)

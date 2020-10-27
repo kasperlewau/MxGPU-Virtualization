@@ -53,7 +53,7 @@ void  map_mmio(struct function *func, struct pci_dev *pdev)
 		return;
 	}
 
-	p_mmr_base =  ioremap_nocache(pci_resource_start(pdev, i),
+	p_mmr_base =  ioremap_cache(pci_resource_start(pdev, i),
 					pci_resource_len(pdev, i));
 
 	if (p_mmr_base == NULL) {
