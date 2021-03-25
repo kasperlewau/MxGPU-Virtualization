@@ -597,7 +597,7 @@ int amdgim_get_vf_candidate(struct adapter *p_adapter)
 	}
 	mutex_unlock(&p_adapter->curr_running_func_mutex);
 
-	if (max_try >= p_adapter->enabled_vfs)
+	if (max_try > p_adapter->enabled_vfs)
 		gim_warn("max_try = %d, enabled_vfs =%d\n",
 			max_try, p_adapter->enabled_vfs);
 
